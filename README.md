@@ -1,194 +1,204 @@
 # Delivery Control Tower
 
-Delivery operations analytics on a six-month order aggregate: a reproducible
-ETL pipeline, a star schema in DuckDB, a rolling-origin order forecast, a
-bottleneck analysis of delivery time, two pre-registered hypotheses, a
-window-function SQL layer with measured optimizations, and an offline
-role-based dashboard.
+Аналитика доставки на полугодовом агрегате заказов: воспроизводимый ETL,
+звёздная схема в DuckDB, прогноз объёма заказов, разбор узких мест во времени
+доставки, две предзарегистрированные гипотезы, слой SQL с оконными функциями и
+замеренными оптимизациями, офлайн-дашборд для каждой роли.
 
-The project asks one operational question — *where does the delivery process
-lose time, and can volume be forecast well enough to staff for it?* — and
-answers it with numbers that can be re-run from the CSVs in `reports/`.
+Предзарегистрированные гипотезы — это гипотезы, сформулированные до расчёта: так
+подгонка под результат видна сразу.
 
-## What it demonstrates
+Проект отвечает на один операционный вопрос: где процесс доставки теряет время
+и хватает ли точности прогноза, чтобы планировать нагрузку на этот объём. Ответ
+— в числах, которые вы перезапустите из CSV в `reports/`.
 
-| Layer | What is shown |
+## Что показывает
+
+| Слой | Что показывает |
 |---|---|
-| Data engineering | Raw → staging (parquet) → DuckDB star schema; every quality check is a named assertion with a recorded value |
-| Forecasting | Rolling-origin backtest (test window 28 days, refit every 7 days, four folds) of four models at horizons 1, 7 and 14, scored with WAPE and MASE |
-| Operations analysis | Delivery-time decomposition by channel × category, a volume-decile load curve, a per-city degradation slope and a composite degradation index |
-| Statistics | Mann-Whitney U with bootstrap confidence intervals; a hypothesis is called supported only when the CI excludes zero |
-| SQL | 14 window-function queries written as named blocks, plus three slow/fast pairs benchmarked under `EXPLAIN ANALYZE` |
-| Presentation | A single self-contained HTML dashboard (no CDN, no client-side requests) with three blocks, one per role |
+| Инженерия данных | Сырые CSV → staging в parquet → звёздная схема в DuckDB; каждая проверка качества — именованное утверждение с сохранённым значением |
+| Прогноз | Бэктест со скользящим началом (окно теста 28 дней, переобучение каждые 7 дней, четыре фолда) для четырёх моделей на горизонтах 1, 7 и 14 дней; метрики WAPE и MASE |
+| Операционный анализ | Декомпозиция времени доставки по каналу × категории, кривая нагрузки по децилям объёма, наклон деградации по каждому городу и составной индекс деградации |
+| Статистика | Критерий Манна — Уитни с бутстреп-доверительными интервалами; гипотеза считается подтверждённой, только если интервал не содержит нуля |
+| SQL | 14 запросов с оконными функциями в виде именованных блоков и три пары «медленно/быстро» с замером через `EXPLAIN ANALYZE` |
+| Подача | Один самодостаточный HTML-дашборд (без CDN и запросов из браузера) с тремя блоками — по одному на роль |
 
-## Data & caveats
+Бэктест — это проверка прогноза на исторических окнах, фолд — один такой прогон.
+WAPE — взвешенная абсолютная процентная ошибка, MASE — ошибка модели в долях от
+ошибки наивного прогноза.
 
-The source is the aggregate table shipped with a public data-analyst test task
-(Dodo Brands): **day × city × channel × category** for **2022-01-01 .. 2022-06-30**,
-covering **550,710 rows**, **264 cities**, **3 channels** (`mp`, `web`, `other`) and
-**4 categories**. A second file is an order-level sample of **130,079 orders**
-across **2 anonymized cities**.
+## Данные и оговорки
 
-Read these caveats before quoting any number:
+Источник — агрегат из открытого тестового задания для аналитика (Dodo Brands):
+**день × город × канал × категория** за **2022-01-01..2022-06-30**. В нём
+**550 710 строк**, **264 города**, **3 канала** (`mp`, `web`, `other`) и
+**4 категории**. Второй файл — выборка на уровне заказов: **130 079 заказов**
+по **2 анонимизированным городам**.
 
-- `tickets` means **orders** (чеки), not support tickets. `SUM(tickets)` over the
-  period is 33,167,293.
-- `qty` means **items** (позиции): 57,576,550 in total, 1.736 items per order.
-- `cost` is a **money metric in unconfirmed source units**. The currency is not
-  documented, and nothing in the data proves it is revenue. It is labelled
-  `cost, source units` everywhere and never called revenue or roubles.
-- `avg_price` does not reconcile with `SUM(cost) / SUM(tickets)` (221.8 vs 138.9),
-  so its semantics are unconfirmed and it is **not used in any calculation**.
-- `clients_qty` is unique clients *inside a cell*; summing it across cells does
-  not give unique clients for the period.
-- `avg_time` is a per-cell mean in minutes; any aggregation over a period is
-  weighted by `qty`, never a plain `AVG`.
+Прежде чем называть любую цифру, прочитайте оговорки:
 
-Full definitions: `docs/data_dictionary.md`.
+- `tickets` — заказы (чеки), а не обращения в поддержку. `SUM(tickets)` за
+  период — 33 167 293.
+- `qty` — позиции: всего 57 576 550, или 1.736 позиции на заказ.
+- `cost` — деньги в **неподтверждённых единицах источника**. Валюту в данных
+  никто не описал, и ничто не доказывает, что это выручка. Везде подписано
+  «cost, ед. источника» и нигде не названо выручкой или рублями.
+- `avg_price` не сходится с `SUM(cost) / SUM(tickets)` (221.8 против 138.9).
+  Семантику подтвердить нечем, поэтому в расчётах он **не участвует**.
+- `clients_qty` — уникальные клиенты внутри ячейки. Сумма по ячейкам не даёт
+  уникальных клиентов за период.
+- `avg_time` — среднее по ячейке в минутах. При агрегации за период его
+  взвешивают по `qty`, а обычный `AVG` брать нельзя.
 
-## Architecture
+Полный словарь полей — в
+[data_dictionary.md](docs/data_dictionary.md).
 
-```
-data/raw/*.csv                     source aggregates, copied verbatim
-        │  delivery.etl           dtype normalisation, calendar columns → parquet
+## Архитектура
+
+```text
+data/raw/*.csv                     исходные агрегаты, копия как есть
+        │  delivery.etl           типы и календарь → parquet
         ▼
 data/staging/*.parquet             sales_daily, orders
-        │  delivery.quality       named assertions: row count, grain uniqueness, ranges
-        │  delivery.marts         star schema + analysis marts
+        │  delivery.quality       именованные проверки качества
+        │  delivery.marts         звёздная схема и витрины
         ▼
 data/marts/delivery.duckdb
-        dim_date · dim_city · dim_channel · dim_category · dim_client · dim_order_city
-        fact_sales (day × city × channel × category) · fact_orders (sample)
+        dim_date · dim_city · dim_channel · dim_category
+        dim_client · dim_order_city
+        fact_sales (день × город × канал × категория)
+        fact_orders (выборка)
         mart_daily_total · mart_city_daily · mart_delivery
         │
-        ├─ delivery.forecast      4 models × 3 horizons, rolling-origin backtest
-        ├─ delivery.bottlenecks   channel×category, load deciles, city ranking
-        ├─ delivery.hypothesis    H1 channel mix, H2 weekend time (bootstrap CI)
-        ├─ delivery.sql_layer     14 window queries + 3 optimization pairs
-        └─ delivery.dashboard     self-contained HTML → reports/dashboard.html
+        ├─ delivery.forecast      4 модели × 3 горизонта, бэктест
+        ├─ delivery.bottlenecks   канал × категория, децили, города
+        ├─ delivery.hypothesis    H1 каналы, H2 выходные, бутстреп
+        ├─ delivery.sql_layer     14 оконных запросов + 3 пары
+        └─ delivery.dashboard     офлайн-HTML → reports/dashboard.html
 ```
 
-`delivery/` is a plain module package; there is no orchestration framework.
-Every stage is idempotent and writes its artifacts into `reports/`.
+`delivery/` — обычный пакет модулей, оркестратора вроде Airflow в проекте нет.
+Каждый шаг идемпотентен и складывает артефакты в `reports/`.
 
-## Quickstart
+## Быстрый старт
 
-Python 3.12 (declared `>=3.11`), dependencies managed with `uv`.
+Нужен Python 3.12 (в `pyproject.toml` объявлено `>=3.11`), зависимости ставит
+`uv`.
 
 ```bash
-uv sync --all-groups      # runtime + dev dependencies
+uv sync --all-groups          # зависимости для работы и тестов
 uv run python -m delivery.etl
 uv run python -m delivery.marts
 uv run python -m delivery.forecast
 uv run python -m delivery.bottlenecks
 uv run python -m delivery.hypothesis
-uv run python -m delivery.sql_layer   # window queries + optimization benchmark
+uv run python -m delivery.sql_layer   # оконные запросы и замеры
 uv run python -m delivery.dashboard   # → reports/dashboard.html
-uv run pytest                         # 79 tests
+uv run pytest                         # 79 тестов
 uv run ruff check delivery/ tests/
 ```
 
-`delivery.etl` expects the two source CSVs in `data/raw/`. With the files already
-there the later stages run on their own.
+`delivery.etl` ждёт два исходных CSV в `data/raw/`. Если файлы уже на месте,
+остальные шаги идут сами.
 
-**Data.** The source CSVs are not in the repository — together they are about
-**~85 MB**. Put them in `data/raw/` as `city_day_channel_category.csv` and
-`orders_sample.csv`, or set the `DELIVERY_RAW_SOURCE` environment variable to
-the directory that holds the original files (named
-`оценка_категорий_4.csv` and `DA_sql_sample - sql_task.csv`); `delivery.etl`
-then copies them into `data/raw/`. A non-empty `data/raw/` always wins: the copy
-is skipped, so a fresh clone with the CSVs in place needs no source directory.
+**Данные** — исходных CSV в репозитории нет: вместе они весят около 85 МБ.
+Положите их в `data/raw/` как `city_day_channel_category.csv` и
+`orders_sample.csv` или укажите в `DELIVERY_RAW_SOURCE` папку с оригиналами
+(`оценка_категорий_4.csv` и `DA_sql_sample - sql_task.csv`) — `delivery.etl`
+скопирует их сам. Непустой `data/raw/` всегда главнее: копирование в этом
+случае пропускается, и свежему клону с готовыми CSV исходная папка не нужна.
 
-The mart tests read `data/marts/delivery.duckdb`; on a clean machine run
-`uv run python -m delivery.marts` first, otherwise those tests skip.
+Тесты витрин читают `data/marts/delivery.duckdb`. На чистой машине сначала
+запустите `uv run python -m delivery.marts`, иначе эти тесты пропустятся.
 
-## Results
+## Результаты
 
-### Order forecast — WAPE by horizon (%, four folds)
+### Прогноз заказов: WAPE по горизонтам (%, четыре фолда)
 
-| Model | h=1 | h=7 | h=14 |
+| Модель | h = 1 | h = 7 | h = 14 |
 |---|---:|---:|---:|
-| naive | 22.68 | 12.53 | 12.54 |
-| seasonal_naive | 5.40 | **6.01** | **6.25** |
-| holt_winters | **3.91** | 7.16 | 7.22 |
-| hgb (gradient boosting) | 7.14 | 7.90 | 8.09 |
+| `naive` | 22.68 | 12.53 | 12.54 |
+| `seasonal_naive` | 5.40 | **6.01** | **6.25** |
+| `holt_winters` | **3.91** | 7.16 | 7.22 |
+| `hgb` (градиентный бустинг) | 7.14 | 7.90 | 8.09 |
 
-Holt-Winters wins the one-day horizon (3.91%), but the seven- and fourteen-day
-windows belong to the weekly seasonal naive (6.01% and 6.25%). The gradient
-boosting model does not beat the seasonal baseline at any horizon.
+На горизонте в один день выигрывает Holt-Winters (3.91%), а на семи и
+четырнадцати днях — недельная сезонная наивная модель (6.01% и 6.25%).
+Градиентный бустинг не обгоняет сезонный бейзлайн ни на одном горизонте.
 
-### Three findings
+### Три находки
 
-1. **Delivery time is driven by category, not by load.** The pooled Spearman
-   correlation between daily city volume and delivery time is **ρ = −0.044**;
-   mean time moves only from 30.58 min in the lowest volume decile to 30.35 min
-   in the highest. Within the same channel, snacks take **≈39.95–39.99 min**
-   against pizza at **≈26.49–26.56 min** — roughly **+13.4 min (+50%)**.
-2. **Channel mix is shifting towards the marketplace.** The `mp` share inside
-   the `mp + web` pair grows from **81.9% in January to 87.6% in June**
-   (**+5.7 pp**, Mann-Whitney p = 2.1e-11, bootstrap CI [5.35; 6.03]).
-3. **SQL pays for itself when rewritten.** Of three slow/fast pairs, the best
-   speedup is **5.66×** on a running order count over 130,079 rows
-   (62.3 ms → 11.0 ms); the other two reach 3.23× and 1.27×. All 14 window
-   queries finish under 200 ms on this dataset, the slowest being a 30-day
-   active-client count at **195.95 ms**. Timings are wall-clock on this machine,
-   median of 3 runs after one warm-up; run-to-run spread is up to ±30%, so
-   speedups are an order of magnitude, not an exact figure.
+1. **Время доставки определяется категорией, а не загрузкой.** Общая
+   корреляция Спирмена между дневным объёмом города и временем доставки —
+   **ρ = −0.044**; среднее время меняется с 30.58 минуты в нижнем дециле
+   объёма до 30.35 минуты в верхнем. Внутри одного канала снеки идут
+   **≈39.95–39.99 минуты** против пиццы **≈26.49–26.56 минуты** — примерно
+   **+13.4 минуты (+50%)**.
+2. **Канальный микс смещается в маркетплейс.** Доля `mp` в паре `mp + web`
+   растёт с **81.9% в январе до 87.6% в июне** (**+5.7 п. п.**, p = 2.1e-11,
+   бутстреп-интервал [5.35; 6.03]).
+3. **SQL окупается при переписывании.** Из трёх пар «медленно/быстро» лучший
+   результат — **5.66×** на накопленном счёте заказов по 130 079 строкам
+   (62.3 мс → 11.0 мс); две другие пары дают 3.23× и 1.27×. Все 14 оконных
+   запросов укладываются в 200 мс, самый медленный — подсчёт активных
+   клиентов за 30 дней, **195.95 мс**. Время настенное, на этой машине,
+   медиана из 3 прогонов после прогрева; разброс между прогонами до ±30%,
+   поэтому ускорения — это порядок величины, а не точная цифра.
 
-### One honest negative result
+### Один честный отрицательный результат
 
-**Weekend deliveries are not slower.** The pre-registered hypothesis H2 is not
-supported: median delivery time on a city-day is **30.44 min on weekends vs
-30.45 min on weekdays (−0.02%)**, p = **0.617**, bootstrap CI [−0.151; +0.095],
-n = 13,720 / 34,030. That is a flat trend, not an effect.
+**По выходным доставка не медленнее.** Предзарегистрированная гипотеза H2 не
+подтвердилась: медианное время доставки в городе-дне — **30.44 минуты
+в выходные против 30.45 в будни (−0.02%)**, p = **0.617**,
+бутстреп-интервал [−0.151; +0.095], n = 13 720 / 34 030. Это ровный тренд,
+а не эффект.
 
-The forecast carries a second honest negative: the machine-learning model does
-not beat a seasonal naive baseline, and the project reports the baseline as the
-recommendation for h=7 and h=14 rather than the more complex model.
+У прогноза есть второй честный минус: модель машинного обучения не обгоняет
+сезонный бейзлайн, и для h = 7 и h = 14 проект рекомендует именно бейзлайн,
+а не более сложную модель.
 
-## Project structure
+## Структура проекта
 
-```
+```text
 delivery/
-  config.py        paths and shared constants
-  etl.py           raw → staging parquet, calendar features
-  quality.py       named data-quality assertions
-  marts.py         star schema and analysis marts in DuckDB
-  forecast.py      rolling-origin backtest, four models, WAPE/MASE
-  bottlenecks.py   channel × category, load curve, city degradation ranking
-  hypothesis.py    H1 / H2 with Mann-Whitney and bootstrap CI
-  sql_layer.py     named window queries + EXPLAIN ANALYZE benchmark
-  dashboard.py     offline HTML dashboard, inline SVG only
+  config.py        пути и общие константы
+  etl.py           сырые CSV → staging parquet, календарь
+  quality.py       именованные проверки качества данных
+  marts.py         звёздная схема и витрины в DuckDB
+  forecast.py      бэктест со скользящим началом, WAPE и MASE
+  bottlenecks.py   канал × категория, кривая нагрузки, города
+  hypothesis.py    H1 и H2: Манн — Уитни и бутстреп-интервал
+  sql_layer.py     оконные запросы + EXPLAIN ANALYZE
+  dashboard.py     офлайн-HTML, только встроенный SVG
 sql/
-  windows.sql            14 named window-function queries
-  optimization.sql       3 slow/fast pairs
-  indexes_postgres.sql   index DDL for a Postgres deployment
-superset/          docker-compose recipe for a live Superset (unverified, see below)
+  windows.sql            14 именованных оконных запросов
+  optimization.sql       3 пары «медленно/быстро»
+  indexes_postgres.sql   индексы для развёртывания в Postgres
+superset/          рецепт docker-compose, не проверен
 docs/data_dictionary.md
-reports/           CSV artifacts, figures, dashboard.html
-tests/             79 pytest tests
+reports/           CSV-артефакты, графики, dashboard.html
+tests/             79 тестов pytest
 ```
 
-## Limitations
+## Ограничения
 
-- **Aggregate granularity.** The data is pre-aggregated to
-  day × city × channel × category. There is no order-level timing, no courier,
-  no restaurant dimension, so a delivery-time decomposition stops at the
-  category level.
-- **The order sample covers two anonymized cities.** It is used for the SQL
-  layer only and does not support city-level conclusions.
-- **`cost` has no confirmed currency** and is not treated as revenue.
-  `avg_price` is unused for the same reason.
-- **The city degradation slopes are weak.** The top-ranked city (Азов,
-  degradation index 2.07) has a slope R² of 0.0098, so the ranking is a
-  prioritization aid, not a significant per-city trend.
-- **Four backtest folds.** WAPE is estimated on a 28-day test window with four
-  refits; the confidence around the model comparison is therefore narrow in
-  sample count, and differences of a few tenths of a point should not be read
-  as decisive.
-- **The Superset recipe was never started.** Docker is unavailable on the build
-  machine, so `superset/docker-compose.yml` and `init_superset.sh` are written
-  but unverified: no run, no screenshots, no confirmed connection. The artifact
-  that is tested is the static dashboard.
-- **No causal claims.** The hypotheses are associational tests on observational
-  aggregates; nothing here identifies a treatment effect.
+- **Агрегатная гранулярность** — данные уже свёрнуты до
+  «день × город × канал × категория». В них нет времени по отдельному заказу,
+  нет курьера и ресторана, поэтому декомпозиция времени доставки
+  останавливается на уровне категории.
+- **Выборка заказов покрывает два анонимизированных города** — она нужна
+  только слою SQL и не годится для выводов по городам.
+- **У `cost` нет подтверждённой валюты**, поэтому он не считается выручкой.
+  `avg_price` не используется по той же причине.
+- **Наклоны деградации по городам слабые** — у города на первом месте (Азов,
+  индекс деградации 2.07) R² наклона 0.0098, так что рейтинг помогает
+  расставить приоритеты, но не доказывает тренд по городу.
+- **Четыре фолда бэктеста** — WAPE оценён на 28-дневном окне теста с четырьмя
+  переобучениями, поэтому выборка для сравнения моделей узкая, а разницу
+  в несколько десятых пункта не стоит читать как решённую.
+- **Рецепт Superset так и не запускали** — Docker на машине сборки недоступен,
+  поэтому `superset/docker-compose.yml` и `init_superset.sh` написаны, но не
+  проверены: ни запуска, ни скриншотов, ни подтверждённого подключения.
+  Проверенный артефакт — статический дашборд.
+- **Причинных выводов нет** — гипотезы проверяют связь на наблюдаемых
+  агрегатах, а эффект воздействия такой дизайн не выделяет.
