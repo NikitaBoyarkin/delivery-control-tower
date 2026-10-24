@@ -1,0 +1,78 @@
+# Superset BI layer for Delivery Control Tower.
+#
+# STATUS: written but NOT executed. Docker was not running on the authoring
+# machine, so nothing in this file has been verified end to end. The static
+# dashboard (`uv run python -m delivery.dashboard`) is the verified artifact.
+#
+# Usage:
+#   cp .env.example .env && edit .env
+#   docker compose up -d
+#   ./init_superset.sh
+
+name: delivery-superset
+
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-superset}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-superset}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-superset} -d ${POSTGRES_DB:-superset}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  superset:
+    image: apache/superset:4.1.2
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:?set SUPERSET_SECRET_KEY in .env}
+      SUPERSET_CONFIG_PATH: /app/superset_home/superset_config.py
+      POSTGRES_USER: ${POSTGRES_USER:-superset}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-superset}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      # Used by init_superset.sh to create the admin and the datasets.
+      SUPERSET_ADMIN_USERNAME: ${SUPERSET_ADMIN_USERNAME:-admin}
+      SUPERSET_ADMIN_PASSWORD: ${SUPERSET_ADMIN_PASSWORD:?set SUPERSET_ADMIN_PASSWORD in .env}
+      SUPERSET_ADMIN_EMAIL: ${SUPERSET_ADMIN_EMAIL:-admin@example.com}
+      # Absolute path *inside the container*; ../data/marts is mounted at /data.
+      DELIVERY_DUCKDB_URI: ${DELIVERY_DUCKDB_URI:-duckdb:////data/delivery.duckdb}
+    volumes:
+      - superset_home:/app/superset_home
+      - ../data/marts:/data:ro
+    ports:
+      - "${SUPERSET_PORT:-8088}:8088"
+    command:
+      - /bin/bash
+      - -c
+      - |
+        set -e
+        mkdir -p /app/superset_home
+        cat > /app/superset_home/superset_config.py <<'PY'
+        import os
+
+        SECRET_KEY = os.environ["SUPERSET_SECRET_KEY"]
+        SQLALCHEMY_DATABASE_URI = (
+            f"postgresql+psycopg2://{os.environ['POSTGRES_USER']}:"
+            f"{os.environ['POSTGRES_PASSWORD']}@{os.environ['POSTGRES_HOST']}:"
+            f"{os.environ['POSTGRES_PORT']}/{os.environ['POSTGRES_DB']}"
+        )
+        ENABLE_PROXY_FIX = True
+        WTF_CSRF_ENABLED = True
+        PY
+        superset db upgrade
+        superset run -h 0.0.0.0 -p 8088
+
+volumes:
+  postgres_data:
+  superset_home:

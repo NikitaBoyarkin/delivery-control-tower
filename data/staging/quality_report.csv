@@ -1,0 +1,13 @@
+check,table,passed,value,expected
+row_count,sales_daily,True,550710,550710
+grain_unique,sales_daily,True,0,0
+no_nulls,sales_daily,True,0,0
+qty_positive,sales_daily,True,0,0
+tickets_le_qty,sales_daily,True,0,0
+cost_non_negative,sales_daily,True,0,0
+date_min,sales_daily,True,2022-01-01,2022-01-01
+date_max,sales_daily,True,2022-06-30,2022-06-30
+row_count,orders,True,130079,130079
+order_id_unique,orders,True,0,0
+sales_non_negative,orders,True,0,0
+orders_no_nulls,orders,True,0,0

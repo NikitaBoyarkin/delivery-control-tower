@@ -1,0 +1,15 @@
+name,rows,time_ms
+daily_volume_ma7,181,7.87
+wow_growth_pct,25,5.53
+cumulative_volume_running_total,181,1.46
+city_monthly_rank,1584,7.25
+daily_volume_quartile,181,1.61
+city_share_of_total,264,3.02
+city_day_vs_median,47750,27.28
+active_clients_30d,181,195.95
+top3_days_per_month,18,3.09
+anomaly_days_3x_ma7,6,10.55
+pareto_cities_cumulative_share,264,3.84
+city_channel_rank,792,4.39
+city_delivery_time_rank,264,2.3
+client_days_between_orders,98653,15.24

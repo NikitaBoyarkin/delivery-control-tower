@@ -1,0 +1,7 @@
+pair,variant,rows,time_ms,speedup
+running_order_count,slow,130079,62.3,1.0
+running_order_count,fast,130079,11.0,5.66
+monthly_revenue_label,slow,6,8.4,1.0
+monthly_revenue_label,fast,6,2.6,3.23
+client_lifetime_revenue,slow,31426,5.7,1.0
+client_lifetime_revenue,fast,31426,4.5,1.27

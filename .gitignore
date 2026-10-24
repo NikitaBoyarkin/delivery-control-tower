@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Raw and derived data are reproduced by `uv run python -m delivery.etl`
+data/raw/*.csv
+data/staging/*.parquet
+data/marts/*.duckdb
+reports/sql_results/*.csv
+
+# Superset runtime
+superset/superset_home/
