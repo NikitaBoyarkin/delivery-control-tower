@@ -28,7 +28,7 @@ SELECT
     SUM(qty)                               AS total_qty,
     SUM(cost)                              AS total_cost,
     COUNT(DISTINCT date)                   AS active_days,
-    AVG(avg_time)                          AS avg_delivery_time
+    SUM(qty * avg_time) / NULLIF(SUM(qty), 0) AS avg_delivery_time
 FROM stg_sales
 GROUP BY city_name;
 
@@ -97,7 +97,7 @@ SELECT
     SUM(s.tickets)    AS tickets,
     SUM(s.clients_qty) AS clients_qty,
     SUM(s.qty) / NULLIF(SUM(s.tickets), 0) AS items_per_order,
-    AVG(s.avg_time)   AS avg_time
+    SUM(s.qty * s.avg_time) / NULLIF(SUM(s.qty), 0) AS avg_time
 FROM stg_sales s
 GROUP BY s.city_name, s.date, s.day_of_week, s.is_weekend;
 

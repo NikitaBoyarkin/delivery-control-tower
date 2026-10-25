@@ -116,11 +116,29 @@ def bootstrap_diff(
     return float(min(low, high)), float(max(low, high))
 
 
-def _supported(p_value: float, ci_low: float, ci_high: float, alpha: float = ALPHA) -> bool:
-    """A claim survives only with p < alpha and a CI that does not cross zero."""
-    if not np.isfinite(p_value) or not np.isfinite(ci_low) or not np.isfinite(ci_high):
+def _supported(
+    p_value: float, ci_low: float, ci_high: float, alpha: float = ALPHA, expected_sign: int = 1
+) -> bool:
+    """A claim survives only with p < alpha, a CI clear of zero, and the registered direction.
+
+    ``expected_sign`` is +1 when the hypothesis predicts variant > control (both H1 and H2 do).
+    A significant effect in the opposite direction rejects the hypothesis; it does not confirm
+    it, which is what a sign-agnostic "CI excludes zero" check would otherwise report.
+    """
+    if not all(np.isfinite([p_value, ci_low, ci_high])):
         return False
-    return bool(p_value < alpha and (ci_low > 0.0 or ci_high < 0.0))
+    if p_value >= alpha:
+        return False
+    return bool(ci_low > 0.0) if expected_sign > 0 else bool(ci_high < 0.0)
+
+
+def _verdict_note(note: str, supported: bool, ci_low: float, ci_high: float) -> str:
+    """Prefix the note so a null reads differently from a significant opposite effect."""
+    if supported:
+        return note
+    if ci_low > 0.0 or ci_high < 0.0:
+        return "эффект значим в обратную сторону: " + note
+    return "тенденция, не вывод: " + note
 
 
 def test_h1(shares: pd.DataFrame, alpha: float = ALPHA) -> dict[str, Any]:
@@ -153,8 +171,7 @@ def test_h1(shares: pd.DataFrame, alpha: float = ALPHA) -> dict[str, Any]:
         f"Доля mp внутри пары mp+web: январь {january.mean():.1%} → июнь {june.mean():.1%} "
         f"({effect:+.1f} п.п.); доля web падает на те же {abs(effect):.1f} п.п. по построению."
     )
-    if not supported:
-        note = "тенденция, не вывод: " + note
+    note = _verdict_note(note, supported, ci_low, ci_high)
     return {
         "hypothesis": "H1: доля канала mp растёт быстрее, чем web",
         "n_test": int(june.size),
@@ -202,8 +219,7 @@ def test_h2(city_daily: pd.DataFrame, alpha: float = ALPHA) -> dict[str, Any]:
         f"Медиана на city-day: выходные {median_weekend:.2f} мин, будни {median_weekday:.2f} мин "
         f"({effect:+.2f}%), n = {weekend.size} / {weekday.size}."
     )
-    if not supported:
-        note = "тенденция, не вывод: " + note
+    note = _verdict_note(note, supported, ci_low, ci_high)
     return {
         "hypothesis": "H2: время доставки в выходные выше, чем в будни",
         "n_test": int(weekend.size),
@@ -278,7 +294,9 @@ def _plot_weekend_time(city_daily: pd.DataFrame, path: Path) -> None:
     plt.close(fig)
 
 
-def plot_hypotheses(shares: pd.DataFrame, city_daily: pd.DataFrame, figures_dir: Path = cfg.FIGURES) -> dict[str, Path]:
+def plot_hypotheses(
+    shares: pd.DataFrame, city_daily: pd.DataFrame, figures_dir: Path = cfg.FIGURES
+) -> dict[str, Path]:
     """Persist the two hypothesis figures."""
     figures_dir.mkdir(parents=True, exist_ok=True)
     paths = {
@@ -297,7 +315,7 @@ def main() -> None:
     figures = plot_hypotheses(analysis["shares"], analysis["city_daily"])
 
     for row in results.itertuples():
-        verdict = "supported" if row.supported else "НЕ supported — тенденция, не вывод"
+        verdict = "supported" if row.supported else "НЕ supported"
         print(
             f"{row.hypothesis}\n"
             f"  n: {row.n_test} vs {row.n_control}; U = {row.statistic:.1f}; "

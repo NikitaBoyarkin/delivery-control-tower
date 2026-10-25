@@ -1,0 +1,7 @@
+readout,metric,control,variant,effect,ci_low,ci_high,p_value,test,n_control,n_test,note
+H1 June vs January,mp_share_of_mp_plus_web,0.8181,0.8760,+5.7910 pp,4.7631,6.8032,0.0,two-proportion z-test on pooled qty,7789214,8513624,day-cluster bootstrap CI on the pp difference: [4.76; 6.80] pp; pair share is closed (mp up forces web down)
+H2 weekend vs weekday,delivery_time_unweighted,30.4784,30.4662,-0.0400%,-0.043,0.0185,0.43496527138461366,Welch t-test on city-day rows,34030,13720,cluster-bootstrap CI by city on the difference: [-0.0431; +0.0188] min
+H2 weekend vs weekday,delivery_time_weighted,31.6648,31.3716,-0.9259%,-0.3352,-0.2505,1.042215782452598e-40,Welch t-test on city-day rows,34030,13720,cluster-bootstrap CI by city on the difference: [-0.3366; -0.2501] min
+H2 weekend vs weekday,delivery_time_weighted_by_tickets,30.9068,30.6638,-0.7862%,-0.2855,-0.1987,2.3309643162845375e-27,Welch t-test on city-day rows,34030,13720,cluster-bootstrap CI by city on the difference: [-0.2867; -0.2001] min
+H2 weekend vs weekday,delivery_time_network_day,31.4955,31.2593,-0.7499%,,,0.003377489193590951,Welch t-test on 181 network days (qty-weighted),129,52,one observation per calendar day; serial correlation not modelled
+H2 weekend vs weekday,delivery_time_within_city_paired,31.6650,31.3716,-0.9264%,,,7.949291888990763e-31,paired t-test across 264 cities,264,264,each city contributes its own weekday and weekend mean; city mix held fixed

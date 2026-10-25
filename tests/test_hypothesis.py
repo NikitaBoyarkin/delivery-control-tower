@@ -10,7 +10,9 @@ from delivery import config as cfg
 from delivery import hypothesis
 
 
-def _shares(jan_mean: float = 0.80, jun_mean: float = 0.86, seed: int = 0, n: int = 30) -> pd.DataFrame:
+def _shares(
+    jan_mean: float = 0.80, jun_mean: float = 0.86, seed: int = 0, n: int = 30
+) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     january = pd.DataFrame(
         {
@@ -85,13 +87,33 @@ def test_h2_detects_higher_weekend_time():
 def test_h2_not_supported_when_identical():
     values = np.random.default_rng(2).normal(30.0, 0.5, 300)
     city_daily = pd.DataFrame(
-        {"is_weekend": np.array([0] * 300 + [1] * 300), "avg_time": np.concatenate([values, values])}
+        {
+            "is_weekend": np.array([0] * 300 + [1] * 300),
+            "avg_time": np.concatenate([values, values]),
+        }
     )
     record = hypothesis.test_h2(city_daily)
     assert record["p_value"] >= hypothesis.ALPHA
     assert record["ci_low"] <= 0.0 <= record["ci_high"]
     assert record["supported"] is False
     assert "тенденция, не вывод" in record["note"]
+
+
+def test_h2_rejects_significant_effect_in_wrong_direction():
+    """A significant drop contradicts "weekends are slower" — it must not read as support."""
+    record = hypothesis.test_h2(_city_daily(weekend_shift=-1.0))
+    assert record["p_value"] < hypothesis.ALPHA
+    assert record["effect"] < 0
+    assert record["ci_high"] < 0
+    assert record["supported"] is False
+    assert record["note"].startswith("эффект значим в обратную сторону")
+
+
+def test_h1_rejects_significant_decline():
+    record = hypothesis.test_h1(_shares(jan_mean=0.86, jun_mean=0.80))
+    assert record["p_value"] < hypothesis.ALPHA
+    assert record["effect"] < 0
+    assert record["supported"] is False
 
 
 def test_results_frame_and_csv_roundtrip(tmp_path):
