@@ -8,6 +8,7 @@ dependencies = [
     "pyarrow>=16",
     "duckdb>=1.1",
     "numpy>=1.26",
+    "scipy>=1.11",
     "scikit-learn>=1.5",
     "statsmodels>=0.14",
     "matplotlib>=3.9",

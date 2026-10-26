@@ -5,9 +5,14 @@ import pytest
 from delivery import config as cfg
 from delivery import etl, marts
 
+RAW_FILES = (cfg.AGG_FILE, cfg.ORDERS_FILE)
+RAW_SOURCES = (cfg.RAW_SOURCE / cfg.RAW_AGG, cfg.RAW_SOURCE / cfg.RAW_ORDERS)
+
 
 @pytest.fixture(scope="module")
 def db():
+    if not all(p.exists() for p in RAW_FILES) and not all(p.exists() for p in RAW_SOURCES):
+        pytest.skip("raw CSVs absent — run `uv run python -m delivery.etl` first (README «Данные»)")
     etl.write_staging()
     marts.build()
     con = duckdb.connect(str(cfg.DUCKDB_PATH), read_only=True)
