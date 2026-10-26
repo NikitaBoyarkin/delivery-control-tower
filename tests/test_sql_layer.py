@@ -150,7 +150,7 @@ def test_run_windows_writes_csv_artifacts(con, tmp_path):
     assert len(result_files) == len(timings)
 
 
-def test_cli_main_writes_artifacts(tmp_path):
+def test_cli_main_writes_artifacts(con, tmp_path):
     exit_code = sql_layer.main(["--out-dir", str(tmp_path), "--repeats", "1"])
     assert exit_code == 0
     assert (tmp_path / sql_layer.TIMINGS_FILE).exists()

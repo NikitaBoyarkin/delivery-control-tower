@@ -4,9 +4,18 @@ import pytest
 from delivery import config as cfg
 from delivery import etl, quality
 
+RAW_FILES = (cfg.AGG_FILE, cfg.ORDERS_FILE)
+RAW_SOURCES = (cfg.RAW_SOURCE / cfg.RAW_AGG, cfg.RAW_SOURCE / cfg.RAW_ORDERS)
+RAW_MISSING = not all(p.exists() for p in RAW_FILES) and not all(p.exists() for p in RAW_SOURCES)
+needs_raw = pytest.mark.skipif(
+    RAW_MISSING, reason="raw CSVs absent — run `uv run python -m delivery.etl` first (README «Данные»)"
+)
+
 
 @pytest.fixture(scope="module")
 def staging():
+    if RAW_MISSING:
+        pytest.skip("raw CSVs absent — run `uv run python -m delivery.etl` first (README «Данные»)")
     etl.copy_raw()
     return etl.load_agg(), etl.load_orders()
 
@@ -62,6 +71,7 @@ def test_quality_report_passes(staging):
     assert failed == []
 
 
+@needs_raw
 def test_staging_roundtrip(tmp_path):
     etl.write_staging()
     sales = pd.read_parquet(cfg.STAGING / "sales_daily.parquet")
@@ -95,12 +105,14 @@ def test_copy_raw_raises_actionable_error(tmp_path, monkeypatch):
         etl.copy_raw()
 
 
+@needs_raw
 def test_quality_cli_passes_on_current_data():
     etl.write_staging()
     assert quality.main() == 0
     assert (cfg.STAGING / "quality_report.csv").exists()
 
 
+@needs_raw
 def test_quality_cli_fails_on_violation(tmp_path, monkeypatch):
     etl.write_staging()
     sales = pd.read_parquet(cfg.STAGING / "sales_daily.parquet").head(1)

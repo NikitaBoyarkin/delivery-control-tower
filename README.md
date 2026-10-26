@@ -95,7 +95,7 @@ uv run python -m delivery.hypothesis
 uv run python scripts/ab_test_analyzer.py --readout all   # SRM, мощность, H1/H2
 uv run python -m delivery.sql_layer   # оконные запросы и замеры
 uv run python -m delivery.dashboard   # → reports/dashboard.html
-uv run pytest                         # 83 теста
+uv run pytest                         # 84 теста
 uv run ruff check delivery/ tests/
 ```
 
@@ -188,7 +188,7 @@ scripts/
 docs/data_dictionary.md
 reports/           CSV-артефакты, графики, dashboard.html,
                    ab_test_analysis.md (ридаут H1/H2), ab_test_metrics.csv
-tests/             83 теста pytest
+tests/             84 теста pytest
 ```
 
 ## Ограничения

@@ -72,10 +72,15 @@ def channel_daily_shares(db_path: Path = cfg.DUCKDB_PATH) -> pd.DataFrame:
 
 
 def load_city_daily(db_path: Path = cfg.DUCKDB_PATH) -> pd.DataFrame:
-    """City-day mart used by H2."""
+    """City-day mart used by H2, ordered so the bootstrap CI does not move between rebuilds.
+
+    ``bootstrap_diff`` resamples by row position, and DuckDB's GROUP BY output order is
+    unspecified: without the ORDER BY the same data rebuilt in a different physical order
+    yields a different interval while every order-invariant statistic stays identical.
+    """
     con = duckdb.connect(str(db_path), read_only=True)
     try:
-        return con.execute("SELECT * FROM mart_city_daily").df()
+        return con.execute("SELECT * FROM mart_city_daily ORDER BY city_name, date").df()
     finally:
         con.close()
 

@@ -148,3 +148,12 @@ def test_analyze_on_real_mart():
     assert results["p_value"].between(0, 1).all()
     assert (results["ci_low"] <= results["ci_high"]).all()
     assert "mp_share_pair" in analysis["shares"].columns
+
+
+@pytest.mark.skipif(not cfg.DUCKDB_PATH.exists(), reason="mart database is not built")
+def test_city_daily_has_stable_row_order():
+    """H2 resamples by row position, so a mart rebuild must not reorder the frame."""
+    frame = hypothesis.load_city_daily()
+    keys = ["city_name", "date"]
+    assert frame[keys].equals(frame[keys].sort_values(keys).reset_index(drop=True))
+    assert frame.equals(hypothesis.load_city_daily())

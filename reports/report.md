@@ -208,7 +208,7 @@ uv run python -m delivery.bottlenecks
 uv run python -m delivery.hypothesis
 uv run python -m delivery.sql_layer
 uv run python -m delivery.dashboard
-uv run pytest        # 74 теста
+uv run pytest        # 84 теста
 ```
 
 `delivery.etl` ожидает исходные CSV по пути `RAW_SOURCE` из
