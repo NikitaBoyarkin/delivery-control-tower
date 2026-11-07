@@ -24,7 +24,7 @@
 и хватает ли точности прогноза, чтобы планировать нагрузку на этот объём. Ответ
 — в числах, которые вы перезапустите из CSV в `reports/`.
 
-**Public link:** живого демо нет · [кейс](https://nikitaboyarkin.github.io/projects/delivery/) · [исходники](https://github.com/NikitaBoyarkin/delivery-control-tower)
+**Public link:** [живой дашборд](https://nikitaboyarkin.github.io/delivery-control-tower/) · [кейс](https://nikitaboyarkin.github.io/projects/delivery/) · [исходники](https://github.com/NikitaBoyarkin/delivery-control-tower)
 
 ## Что показывает
 
@@ -35,7 +35,7 @@
 | Операционный анализ | Декомпозиция времени доставки по каналу × категории, кривая нагрузки по децилям объёма, наклон деградации по каждому городу и составной индекс деградации |
 | Статистика | Критерий Манна — Уитни с бутстреп-доверительными интервалами; гипотеза считается подтверждённой, только если интервал не содержит нуля |
 | SQL | 14 запросов с оконными функциями в виде именованных блоков и три пары «медленно/быстро» с замером через `EXPLAIN ANALYZE` |
-| Подача | Один самодостаточный HTML-дашборд (без CDN и запросов из браузера) с тремя блоками — по одному на роль |
+| Подача | Один самодостаточный HTML-дашборд (без CDN и запросов из браузера) с тремя блоками — по одному на роль; плюс [публичная страница](https://nikitaboyarkin.github.io/delivery-control-tower/) с глобальными фильтрами канала и категории |
 
 Бэктест — это проверка прогноза на исторических окнах, фолд — один такой прогон.
 WAPE — взвешенная абсолютная процентная ошибка, MASE — ошибка модели в долях от
@@ -88,12 +88,15 @@ data/marts/delivery.duckdb
         ├─ delivery.bottlenecks   канал × категория, децили, города
         ├─ delivery.hypothesis    H1 каналы, H2 выходные, бутстреп
         ├─ delivery.sql_layer     14 оконных запросов + 3 пары
-        └─ delivery.dashboard     офлайн-HTML → reports/dashboard.html
+        ├─ delivery.dashboard     офлайн-HTML → reports/dashboard.html
+        └─ delivery.dashboard_pages  публичный HTML → docs/index.html (GitHub Pages)
 ```
 
 `delivery/` — обычный пакет модулей, оркестратора вроде Airflow в проекте нет.
 Каждый шаг идемпотентен: промежуточные слои (`etl`, `quality`, `marts`) пишут в
-`data/`, аналитические артефакты — в `reports/`.
+`data/`, аналитические артефакты — в `reports/`. Исключение — публичная страница:
+`delivery.dashboard_pages` собирает `docs/index.html` из тех же витрин, и именно
+эту папку публикует GitHub Pages.
 
 ## Быстрый старт
 
@@ -108,7 +111,9 @@ data/marts/delivery.duckdb
 схеме, не запустится, а тесты витрин пропустятся. Без данных можно проверить
 закоммиченные артефакты в `reports/`: `report.md`, `ab_test_analysis.md`,
 `dashboard.html`, `forecast_metrics.csv`, `hypothesis_results.csv`,
-`bottleneck_channels.csv`, `bottleneck_cities.csv`.
+`bottleneck_channels.csv`, `bottleneck_cities.csv`. Публичная страница
+`docs/index.html` тоже закоммичена: она самодостаточна, открывается без сервера
+и пересобирается шагом `delivery.dashboard_pages` из витрин DuckDB.
 
 ```bash
 uv sync --all-groups          # зависимости для работы и тестов
@@ -119,8 +124,9 @@ uv run python -m delivery.bottlenecks
 uv run python -m delivery.hypothesis
 uv run python scripts/ab_test_analyzer.py --readout all   # SRM, мощность, H1/H2
 uv run python -m delivery.sql_layer   # оконные запросы и замеры
-uv run python -m delivery.dashboard   # → reports/dashboard.html
-uv run pytest                         # 84 теста
+uv run python -m delivery.dashboard   # → reports/dashboard.html (офлайн, три роли)
+uv run python -m delivery.dashboard_pages   # → docs/index.html (публичная страница)
+uv run pytest                         # 87 тестов
 uv run ruff check delivery/ tests/
 ```
 
@@ -218,10 +224,10 @@ city-day; при кластеризации по дате или городу и
   дефект закрыт регресс-тестом
   `tests/test_marts.py::test_city_time_is_qty_weighted_not_averaged` — разбор в
   разделе «Один честный отрицательный результат — и ошибка в метрике».
-- **Весь конвейер проверяется одной командой.** `uv run pytest` — 84 теста по
+- **Весь конвейер проверяется одной командой.** `uv run pytest` — 87 тестов по
   слоям: `tests/test_etl.py`, `tests/test_marts.py`, `tests/test_forecast.py`,
   `tests/test_hypothesis.py`, `tests/test_sql_layer.py`,
-  `tests/test_dashboard.py`.
+  `tests/test_dashboard.py`, `tests/test_dashboard_pages.py`.
 - **Гипотезы зафиксированы до вердикта, и граница фиксации названа.**
   `docs/preregistration.md` показывает коммит `2af3ea1`, исходные тексты H1/H2
   и правило вердикта; сами числа — `reports/hypothesis_results.csv`, код —
@@ -235,15 +241,16 @@ city-day; при кластеризации по дате или городу и
 
 ```text
 delivery/
-  config.py        пути и общие константы
-  etl.py           сырые CSV → staging parquet, календарь
-  quality.py       именованные проверки качества данных
-  marts.py         звёздная схема и витрины в DuckDB
-  forecast.py      бэктест со скользящим началом, WAPE и MASE
-  bottlenecks.py   канал × категория, кривая нагрузки, города
-  hypothesis.py    H1 и H2: Манн — Уитни и бутстреп-интервал
-  sql_layer.py     оконные запросы + EXPLAIN ANALYZE
-  dashboard.py     офлайн-HTML, только встроенный SVG
+  config.py         пути и общие константы
+  etl.py            сырые CSV → staging parquet, календарь
+  quality.py        именованные проверки качества данных
+  marts.py          звёздная схема и витрины в DuckDB
+  forecast.py       бэктест со скользящим началом, WAPE и MASE
+  bottlenecks.py    канал × категория, кривая нагрузки, города
+  hypothesis.py     H1 и H2: Манн — Уитни и бутстреп-интервал
+  sql_layer.py      оконные запросы + EXPLAIN ANALYZE
+  dashboard.py      офлайн-HTML, только встроенный SVG
+  dashboard_pages.py публичный HTML для GitHub Pages → docs/index.html
 sql/
   windows.sql            14 именованных оконных запросов
   optimization.sql       3 пары «медленно/быстро»
@@ -252,9 +259,12 @@ superset/          рецепт docker-compose, не проверен
 scripts/
   ab_test_analyzer.py     SRM, мощность/MDE, кластерный бутстреп по H1 и H2
 docs/data_dictionary.md
-reports/           CSV-артефакты, графики, dashboard.html,
+reports/           CSV-артефакты, графики, dashboard.html — офлайн-дашборд
+                   с тремя блоками по ролям (delivery/dashboard.py),
                    ab_test_analysis.md (ридаут H1/H2), ab_test_metrics.csv
-tests/             84 теста pytest
+docs/index.html    публичная страница на GitHub Pages: один Power BI-style
+                   дашборд с фильтрами (delivery/dashboard_pages.py)
+tests/             87 тестов pytest
 ```
 
 ## Ограничения
