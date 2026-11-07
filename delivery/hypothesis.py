@@ -4,8 +4,8 @@ H1: the ``mp`` channel share grows faster than ``web`` (January vs June daily mi
 H2: weekend delivery time is higher than on weekdays (``mart_city_daily``).
 
 Both tests report a Mann-Whitney U p-value and a bootstrap 95% CI of the effect.
-A hypothesis is ``supported`` only when p < alpha AND the CI excludes zero;
-otherwise the text says "тенденция, не вывод".
+The verdict rule and the registration record live in ``docs/preregistration.md``:
+``supported`` requires p < alpha, a CI clear of zero and the registered direction.
 """
 
 from __future__ import annotations

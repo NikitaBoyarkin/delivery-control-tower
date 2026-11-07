@@ -4,7 +4,8 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
-# Raw and derived data are reproduced by `uv run python -m delivery.etl`
+# Raw CSVs are not in the repo — see docs/data_sources.md. Derived data is rebuilt
+# by `uv run python -m delivery.etl` once the raw files are in place.
 data/raw/*.csv
 data/staging/*.parquet
 data/marts/*.duckdb

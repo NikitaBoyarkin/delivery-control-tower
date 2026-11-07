@@ -33,6 +33,12 @@ ALPHA = 0.05
 POWER = 0.80
 BOOTSTRAP_N = 5_000
 SEED = 42
+# Planned allocation from the period calendar, never from the observed rows:
+# 2022-01-01..2022-06-30 holds 181 days, 52 of them weekend days. Taking the expected
+# share from the same observations made the chi-square a tautology that cannot fail.
+PLANNED_DAYS = 181
+PLANNED_WEEKEND_DAYS = 52
+PLANNED_WEEKEND_SHARE = PLANNED_WEEKEND_DAYS / PLANNED_DAYS
 
 METRIC_COLUMNS = [
     "readout",
@@ -57,11 +63,13 @@ def load_raw(path: Path = DEFAULT_DATA) -> pd.DataFrame:
 
 
 def city_day(frame: pd.DataFrame) -> pd.DataFrame:
-    """City-day rows in two aggregations: the mart's unweighted mean and a qty-weighted mean.
+    """City-day rows recomputed from the raw CSV, in three aggregations.
 
-    ``avg_time`` is a per-cell mean, i.e. a ratio. The project's own dictionary says
-    it must be re-weighted by ``qty`` when aggregated; ``AVG(avg_time)`` (what
-    ``mart_city_daily`` does) lets a 3-order cell outvote a 300-order cell.
+    ``avg_time`` is a per-cell mean, i.e. a ratio, so the dictionary requires
+    re-weighting by ``qty`` when aggregating; ``mart_city_daily`` now does that
+    (``SUM(qty * avg_time) / SUM(qty)`` in ``marts.py``). This function still
+    recomputes independently from the raw input instead of reading the mart, and
+    keeps ``time_unweighted`` only as the pre-fix baseline.
     """
     base = frame.groupby(["CityName", "Date", "is_weekend"], as_index=False).agg(
         time_unweighted=("avg_time", "mean"),
@@ -292,11 +300,17 @@ def records_h2(frame: pd.DataFrame) -> tuple[list[dict[str, Any]], dict[str, Any
         ),
         "smd_tickets": round(standardised_mean_diff(days, "tickets", "is_weekend"), 4),
     }
-    diagnostics["srm"] = srm_check(
-        n_control=int((days["is_weekend"] == 0).sum()),
-        n_test=int((days["is_weekend"] == 1).sum()),
-        expected_share=float(weekend.size / network.shape[0]),
-    )
+    diagnostics["completeness"] = {
+        "check": (
+            "completeness/balance against the calendar plan, not SRM: "
+            "the arm is the day of week, so nothing is randomly assigned"
+        ),
+        **srm_check(
+            n_control=int((days["is_weekend"] == 0).sum()),
+            n_test=int((days["is_weekend"] == 1).sum()),
+            expected_share=PLANNED_WEEKEND_SHARE,
+        ),
+    }
     return records, diagnostics
 
 
@@ -343,9 +357,13 @@ def records_h1(frame: pd.DataFrame) -> tuple[list[dict[str, Any]], dict[str, Any
             "n_control": n_control,
             "n_test": n_test,
             "note": (
-                f"day-cluster bootstrap CI on the pp difference: "
-                f"[{clust_low:.2f}; {clust_high:.2f}] pp; pair share is closed "
-                "(mp up forces web down)"
+                "alternative specification, not the project's H1: two-proportion "
+                "z-test on pooled qty (unit = item, not day). The canonical H1 is the "
+                "Mann-Whitney test on 30/31 daily shares in delivery/hypothesis.py "
+                "(reports/hypothesis_results.csv: +5.699 pp, p = 2.07e-11); "
+                f"day-cluster bootstrap CI here: [{clust_low:.2f}; {clust_high:.2f}] pp; "
+                "pair share is closed (mp up forces web down); z p-value underflows "
+                "float64, so it is reported as a bound"
             ),
         }
     ]
@@ -358,6 +376,18 @@ def records_h1(frame: pd.DataFrame) -> tuple[list[dict[str, Any]], dict[str, Any
     return records, diagnostics
 
 
+def format_p(p_value: float) -> str:
+    """Render a p-value without the misleading ``0.0`` float underflow.
+
+    ``stats.norm.sf`` returns exactly 0.0 once |z| exceeds ~38: the arm sizes here
+    (7.79M vs 8.51M items) put z past 300, so the number in the cell is not a
+    measurement. Below float64 resolution the honest cell is a bound.
+    """
+    if not np.isfinite(p_value):
+        return "nan"
+    return f"{p_value:.3e}" if p_value > 0.0 else "<1e-300"
+
+
 def _fmt(records: list[dict[str, Any]]) -> str:
     header = (
         "| metric | control | variant | effect | p-value | n control/test | test |\n"
@@ -365,7 +395,7 @@ def _fmt(records: list[dict[str, Any]]) -> str:
     )
     rows = [
         f"| {r['metric']} | {r['control']} | {r['variant']} | {r['effect']} | "
-        f"{r['p_value']:.4g} | {r['n_control']}/{r['n_test']} | {r['test']} |"
+        f"{format_p(r['p_value'])} | {r['n_control']}/{r['n_test']} | {r['test']} |"
         for r in records
     ]
     return "\n".join([header, *rows])
@@ -408,6 +438,7 @@ def main(argv: list[str] | None = None) -> int:
         diagnostics["H2"] = diag
 
     table = pd.DataFrame(records, columns=METRIC_COLUMNS)
+    table["p_value"] = table["p_value"].map(format_p)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     table.to_csv(args.out, index=False)
     print(_fmt(records))

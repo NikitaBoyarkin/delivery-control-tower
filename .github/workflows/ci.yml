@@ -14,7 +14,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.11"
+          python-version-file: .python-version
           enable-cache: true
 
       - name: Install dependencies
@@ -22,6 +22,13 @@ jobs:
 
       - name: Lint
         run: uv run ruff check delivery/ tests/ scripts/
+
+      # The real source CSVs are gitignored. Build a schema-identical synthetic
+      # fixture and run etl -> quality -> marts into a throwaway dir, proving the
+      # pipeline executes before pytest. `tests/conftest.py` independently
+      # materialises the same fixture at collection time when data/ is absent.
+      - name: Synthetic fixture and pipeline
+        run: uv run python -m scripts.make_synthetic_data --base "$RUNNER_TEMP/delivery-fixture"
 
       - name: Tests
         run: uv run pytest

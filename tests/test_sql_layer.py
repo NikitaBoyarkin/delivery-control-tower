@@ -10,15 +10,6 @@ import pytest
 from delivery import config as cfg
 from delivery import sql_layer
 
-TOTAL_CLIENTS = 31_426
-ACTIVE_CLIENTS_20220630 = 12_318
-
-EXPECTED_ROW_COUNTS = {
-    "city_day_vs_median": 47_750,
-    "top3_days_per_month": 18,
-    "city_share_of_total": 264,
-}
-
 
 @pytest.fixture(scope="module")
 def con():
@@ -70,19 +61,52 @@ def test_every_window_query_returns_rows(con, windows_queries):
 
 
 def test_row_counts_match_expected_grain(con, windows_queries):
-    for name, expected in EXPECTED_ROW_COUNTS.items():
+    """Row counts follow the grain of the marts, not a hardcoded row count."""
+    city_days = con.execute(
+        "SELECT COUNT(*) FROM (SELECT DISTINCT city_name, date FROM mart_city_daily)"
+    ).fetchone()[0]
+    cities = con.execute("SELECT COUNT(DISTINCT city_name) FROM mart_city_daily").fetchone()[0]
+    top3 = con.execute(
+        """
+        SELECT SUM(CASE WHEN days < 3 THEN days ELSE 3 END)
+        FROM (
+            SELECT strftime(date, '%Y-%m') AS month, COUNT(DISTINCT date) AS days
+            FROM mart_city_daily
+            GROUP BY 1
+        )
+        """
+    ).fetchone()[0]
+    expected = {
+        "city_day_vs_median": city_days,
+        "top3_days_per_month": top3,
+        "city_share_of_total": cities,
+    }
+    for name, count in expected.items():
         frame = _frame(con, windows_queries, name)
-        assert len(frame) == expected, f"{name}: {len(frame)} rows, expected {expected}"
+        assert len(frame) == count, f"{name}: {len(frame)} rows, expected {count}"
 
 
-def test_active_clients_30d_is_bounded(con, windows_queries):
-    frame = _frame(con, windows_queries, "active_clients_30d")
-    assert len(frame) == 181
-    last_day = frame.loc[frame["date_key"] == 20220630, "active_clients_30d"]
-    assert len(last_day) == 1
-    value = int(last_day.iloc[0])
-    assert 0 < value <= TOTAL_CLIENTS
-    assert value == ACTIVE_CLIENTS_20220630
+def test_active_clients_30d_matches_calendar_window(con, windows_queries):
+    """The 30-day window spans real calendar days, including the previous month."""
+    frame = _frame(con, windows_queries, "active_clients_30d").set_index("date_key")
+    expected = (
+        con.execute(
+            """
+            SELECT d.date_key AS day, COUNT(DISTINCT f.client_key) AS expected
+            FROM dim_date d
+            JOIN dim_date w ON w.date BETWEEN d.date - INTERVAL 29 DAY AND d.date
+            JOIN fact_orders f ON f.date_key = w.date_key
+            GROUP BY 1
+            """
+        )
+        .df()
+        .set_index("day")["expected"]
+    )
+    calendar_days = con.execute("SELECT COUNT(*) FROM dim_date").fetchone()[0]
+    assert len(frame) == calendar_days
+    assert sorted(frame.index) == sorted(expected.index)
+    delta = (frame["active_clients_30d"] - expected).abs()
+    assert delta.max() == 0, delta[delta > 0].head()
 
 
 def test_monthly_city_shares_sum_to_100(con, windows_queries):

@@ -117,20 +117,26 @@ ORDER BY city_name, date;
 
 -- name: active_clients_30d
 -- Distinct active clients in a rolling 30-day window on fact_orders.
--- The window is ordered by date_key with a 29-day RANGE frame. All rows of one
--- date_key share the same frame, so MAX collapses the order-level grain to a
--- daily series without changing the window result.
-WITH windowed AS (
+-- The frame must be keyed on the calendar date: ``RANGE 29 PRECEDING`` over the
+-- integer ``date_key`` is YYYYMMDD arithmetic, so for any day after the 29th the
+-- window falls into non-existent keys (20220172..) and silently shrinks to
+-- "days since the 1st" instead of the previous month.
+WITH pairs AS (
+    SELECT DISTINCT d."date" AS day, f.client_key
+    FROM fact_orders f
+    JOIN dim_date d ON d.date_key = f.date_key
+),
+windowed AS (
     SELECT
-        date_key,
+        day,
         COUNT(DISTINCT client_key) OVER (
-            ORDER BY date_key
-            RANGE BETWEEN 29 PRECEDING AND CURRENT ROW
+            ORDER BY day
+            RANGE BETWEEN INTERVAL 29 DAY PRECEDING AND CURRENT ROW
         ) AS active_clients_30d
-    FROM fact_orders
+    FROM pairs
 )
 SELECT
-    date_key,
+    CAST(strftime(day, '%Y%m%d') AS INTEGER) AS date_key,
     MAX(active_clients_30d) AS active_clients_30d
 FROM windowed
 GROUP BY date_key
