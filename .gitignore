@@ -7,6 +7,7 @@ __pycache__/
 # Raw CSVs are not in the repo — see docs/data_sources.md. Derived data is rebuilt
 # by `uv run python -m delivery.etl` once the raw files are in place.
 data/raw/*.csv
+data/synthetic/*.csv
 data/staging/*.parquet
 data/marts/*.duckdb
 reports/sql_results/*.csv
