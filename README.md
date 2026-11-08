@@ -26,6 +26,7 @@
 
 **Public link:** [живой дашборд](https://nikitaboyarkin.github.io/delivery-control-tower/) · [кейс](https://nikitaboyarkin.github.io/projects/delivery/) · [исходники](https://github.com/NikitaBoyarkin/delivery-control-tower)
 
+**▶ [Схема: конвейер данных и контроль качества](docs/diagrams/delivery-control-tower.svg)** — открывается в браузере, без установки и сборки
 ## Что показывает
 
 | Слой | Что показывает |

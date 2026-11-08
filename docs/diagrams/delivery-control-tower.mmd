@@ -1,0 +1,14 @@
+flowchart LR
+    raw["Сырые CSV — не опубликованы"] -->|copy_raw| stg["Staging: два parquet"]
+    stg --> gate{"Контроль качества staging"}
+    gate -->|все проверки пройдены| marts["Витрины в DuckDB"]
+    gate -.->|провал: стоп| halt["Остановка конвейера"]
+    marts --> fc["Прогноз объёма: бэктест"]
+    marts --> bn["Узкие места доставки"]
+    marts --> hy["Гипотезы H1 и H2"]
+    marts --> sq["SQL-слой: окна и замеры"]
+    fc --> rep["Отчёты и CSV"]
+    bn --> rep
+    hy --> rep
+    sq --> rep
+    marts --> dash["Дашборды HTML<br/>reports/ и docs/"]
