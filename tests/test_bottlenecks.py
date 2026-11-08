@@ -78,9 +78,7 @@ def test_deviation_direction_matches_metric():
 
 
 def test_deciles_cover_all_observations():
-    city_daily = pd.concat(
-        [_city_daily(seed=1), _city_daily(seed=2, city="B")], ignore_index=True
-    )
+    city_daily = pd.concat([_city_daily(seed=1), _city_daily(seed=2, city="B")], ignore_index=True)
     curve, correlation = bottlenecks.load_curve(city_daily)
     assert curve["n_obs"].sum() == len(city_daily)
     assert curve["decile"].is_monotonic_increasing
@@ -121,6 +119,14 @@ def test_empty_ranking_returns_schema():
     ranking = bottlenecks.city_ranking(_city_daily(n_days=5), min_days=60)
     assert ranking.empty
     assert list(ranking.columns) == bottlenecks.CITY_COLUMNS
+
+
+def test_load_curve_figure_survives_an_empty_frame(tmp_path):
+    """An empty mart must still yield a PNG, not a crash on min() of an empty column."""
+    empty = pd.DataFrame(columns=bottlenecks.LOAD_CURVE_COLUMNS)
+    path = tmp_path / "empty_curve.png"
+    bottlenecks._plot_load_curve(empty, {"rho": float("nan")}, path)
+    assert path.exists()
 
 
 def test_write_reports_writes_csv_and_figures(tmp_path):

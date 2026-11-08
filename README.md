@@ -127,7 +127,7 @@ uv run python scripts/ab_test_analyzer.py --readout all   # SRM, мощност�
 uv run python -m delivery.sql_layer   # оконные запросы и замеры
 uv run python -m delivery.dashboard   # → reports/dashboard.html (офлайн, три роли)
 uv run python -m delivery.dashboard_pages   # → docs/index.html (публичная страница)
-uv run pytest                         # 87 тестов
+uv run pytest                         # 95 тестов
 uv run ruff check delivery/ tests/
 ```
 
@@ -178,7 +178,7 @@ uv run ruff check delivery/ tests/
    разрыва вывод не идёт.
 
    ![Кривая нагрузки: среднее время доставки по децилям дневного объёма города, ρ = −0.092](reports/figures/bottleneck_load_curve.png)
-   *Что показано: кривая нагрузки — среднее время доставки по десяти децилям дневного объёма города, 31,88 минуты в нижнем дециле против 31,24 в верхнем, при ранговой корреляции ρ = −0.092; линия плоская, то есть роста времени с нагрузкой нет. Оговорка: данные уже агрегированы до «день × город × канал × категория», поэтому это описание ассоциации на наблюдаемых агрегатах, а не эффект процесса.*
+   *Что показано: кривая нагрузки — среднее время доставки по десяти децилям дневного объёма города, 31,88 минуты в нижнем дециле против 31,24 в верхнем, при ранговой корреляции ρ = −0.092; линия плоская, то есть роста времени с нагрузкой нет. Шкала времени на графике не начинается с нуля — иначе разброс в 0.64 минуты не виден; объём позиций показан светлыми столбцами на правой оси. Оговорка: данные уже агрегированы до «день × город × канал × категория», поэтому это описание ассоциации на наблюдаемых агрегатах, а не эффект процесса.*
 
 2. **Канальный микс смещается в маркетплейс.** Доля `mp` в паре `mp + web`
    растёт с **81.9% в январе до 87.6% в июне** (**+5.7 п. п.**, p = 2.1e-11,
@@ -225,10 +225,11 @@ city-day; при кластеризации по дате или городу и
   дефект закрыт регресс-тестом
   `tests/test_marts.py::test_city_time_is_qty_weighted_not_averaged` — разбор в
   разделе «Один честный отрицательный результат — и ошибка в метрике».
-- **Весь конвейер проверяется одной командой.** `uv run pytest` — 87 тестов по
+- **Весь конвейер проверяется одной командой.** `uv run pytest` — 95 тестов по
   слоям: `tests/test_etl.py`, `tests/test_marts.py`, `tests/test_forecast.py`,
   `tests/test_hypothesis.py`, `tests/test_sql_layer.py`,
-  `tests/test_dashboard.py`, `tests/test_dashboard_pages.py`.
+  `tests/test_dashboard.py`, `tests/test_dashboard_pages.py`,
+  `tests/test_plotting.py`.
 - **Гипотезы зафиксированы до вердикта, и граница фиксации названа.**
   `docs/preregistration.md` показывает коммит `2af3ea1`, исходные тексты H1/H2
   и правило вердикта; сами числа — `reports/hypothesis_results.csv`, код —
@@ -250,6 +251,7 @@ delivery/
   bottlenecks.py    канал × категория, кривая нагрузки, города
   hypothesis.py     H1 и H2: Манн — Уитни и бутстреп-интервал
   sql_layer.py      оконные запросы + EXPLAIN ANALYZE
+  plotting.py       общий стиль matplotlib и сохранение фигур
   dashboard.py      офлайн-HTML, только встроенный SVG
   dashboard_pages.py публичный HTML для GitHub Pages → docs/index.html
 sql/
@@ -265,7 +267,7 @@ reports/           CSV-артефакты, графики, dashboard.html — о
                    ab_test_analysis.md (ридаут H1/H2), ab_test_metrics.csv
 docs/index.html    публичная страница на GitHub Pages: один Power BI-style
                    дашборд с фильтрами (delivery/dashboard_pages.py)
-tests/             87 тестов pytest
+tests/             95 тестов pytest
 ```
 
 ## Ограничения

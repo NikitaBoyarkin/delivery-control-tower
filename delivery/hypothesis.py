@@ -24,6 +24,9 @@ import pandas as pd  # noqa: E402
 from scipy import stats  # noqa: E402
 
 from delivery import config as cfg  # noqa: E402
+from delivery import plotting  # noqa: E402
+
+plotting.apply_style()
 
 ALPHA = 0.05
 BOOTSTRAP_N = 10_000
@@ -265,38 +268,47 @@ def _plot_channel_shares(shares: pd.DataFrame, path: Path) -> None:
     data = shares.dropna(subset=["mp_share_pair"])
     january = data.loc[data["month"] == 1, "mp_share_pair"].to_numpy(dtype=float) * 100.0
     june = data.loc[data["month"] == 6, "mp_share_pair"].to_numpy(dtype=float) * 100.0
-    fig, ax = plt.subplots(figsize=(7, 5))
-    ax.boxplot([january, june], tick_labels=["Январь", "Июнь"], widths=0.5)
+    fig, ax = plt.subplots(figsize=(7, 5), layout="constrained")
+    ax.boxplot(
+        [january, june],
+        tick_labels=["Январь", "Июнь"],
+        widths=0.5,
+        medianprops={"color": plotting.ORANGE},
+    )
     rng = np.random.default_rng(SEED)
     for position, values in ((1, january), (2, june)):
         jitter = rng.normal(position, 0.04, size=values.size)
-        ax.scatter(jitter, values, s=12, alpha=0.6, color="#4C72B0")
-    ax.set_ylabel("Доля mp в паре mp+web, %")
-    ax.set_title("H1: доля mp по дням, январь и июнь")
-    fig.tight_layout()
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
+        ax.scatter(jitter, values, s=12, alpha=0.6, color=plotting.BLUE)
+    ax.set_ylabel("Доля mp в паре mp + web, %")
+    ax.set_title(
+        f"H1: доля mp по дням, январь и июнь\nn = {january.size} дней в январе, {june.size} в июне"
+    )
+    ax.grid(axis="y")
+    plotting.save_figure(fig, path)
 
 
 def _plot_weekend_time(city_daily: pd.DataFrame, path: Path) -> None:
     data = city_daily.dropna(subset=["avg_time"])
     weekday = data.loc[data["is_weekend"] == 0, "avg_time"].to_numpy(dtype=float)
     weekend = data.loc[data["is_weekend"] == 1, "avg_time"].to_numpy(dtype=float)
-    fig, ax = plt.subplots(figsize=(7, 5))
+    fig, ax = plt.subplots(figsize=(7, 5), layout="constrained")
     ax.boxplot(
         [weekday, weekend],
         tick_labels=["Будни", "Выходные"],
         widths=0.5,
         showfliers=False,
+        medianprops={"color": plotting.ORANGE},
     )
     means = [float(np.mean(weekday)), float(np.mean(weekend))]
-    ax.scatter([1, 2], means, color="#C44E52", zorder=3, label="Среднее")
-    ax.legend()
+    ax.scatter([1, 2], means, color=plotting.RED, zorder=3, label="Среднее")
+    ax.legend(loc="lower left")
     ax.set_ylabel("Среднее время доставки города за день, мин")
-    ax.set_title("H2: время доставки в будни и выходные")
-    fig.tight_layout()
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
+    ax.set_title(
+        "H2: время доставки в будни и выходные\n"
+        f"n = {weekday.size:,} будних и {weekend.size:,} выходных город-дней".replace(",", " ")
+    )
+    ax.grid(axis="y")
+    plotting.save_figure(fig, path)
 
 
 def plot_hypotheses(

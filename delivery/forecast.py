@@ -21,11 +21,15 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
+from matplotlib.patches import Patch  # noqa: E402
 from sklearn.ensemble import HistGradientBoostingRegressor  # noqa: E402
 from statsmodels.tools.sm_exceptions import ConvergenceWarning  # noqa: E402
 from statsmodels.tsa.holtwinters import ExponentialSmoothing  # noqa: E402
 
 from delivery import config as cfg  # noqa: E402
+from delivery import plotting  # noqa: E402
+
+plotting.apply_style()
 
 MODELS: tuple[str, ...] = ("naive", "seasonal_naive", "holt_winters", "hgb")
 HORIZONS: tuple[int, ...] = (1, 7, 14)
@@ -421,9 +425,15 @@ def plot_test_period(
     subset = predictions.loc[predictions["model"] == model].copy()
     subset["date"] = pd.to_datetime(subset["date"])
     subset["origin"] = pd.to_datetime(subset["origin"])
-    fig, ax = plt.subplots(figsize=(11, 5))
+    fig, ax = plt.subplots(figsize=(11, 5), layout="constrained")
+    if subset.empty:
+        ax.set_axis_off()
+        ax.text(0.5, 0.5, f"Нет прогнозов для модели {model}", ha="center", va="center")
+        plotting.save_figure(fig, target)
+        return target
     actual = subset.drop_duplicates("date").sort_values("date")
     ax.plot(actual["date"], actual["y_true"], color="black", linewidth=2.0, label="факт")
+    first_fold = True
     for fold_id, fold in subset.groupby("fold", sort=True):
         fold = fold.sort_values("date")
         ax.plot(
@@ -434,36 +444,66 @@ def plot_test_period(
             linewidth=1.4,
             label=f"прогноз, фолд {int(fold_id) + 1}",
         )
-        ax.axvline(fold["origin"].iloc[0], color="grey", linestyle=":", linewidth=0.8)
-    ax.set_title(f"Заказы: факт vs прогноз заказов, модель {model} (тестовое окно)")
+        ax.axvline(
+            fold["origin"].iloc[0],
+            color=plotting.GREY,
+            linestyle=":",
+            linewidth=0.8,
+            label="начало фолда" if first_fold else None,
+        )
+        first_fold = False
+    ax.set_xlim(
+        min(actual["date"].min(), subset["date"].min()),
+        max(actual["date"].max(), subset["date"].max()),
+    )
+    ax.set_title(f"Заказы: факт vs прогноз, модель {model} (тестовое окно)")
     ax.set_ylabel("Заказы, шт.")
     ax.grid(alpha=0.3)
-    ax.legend(fontsize=8, ncol=2)
+    plotting.thousands(ax, "y")
+    ax.legend(
+        fontsize=8,
+        ncols=3,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.18),
+    )
     fig.autofmt_xdate()
-    fig.tight_layout()
-    fig.savefig(target, dpi=150)
-    plt.close(fig)
+    plotting.save_figure(fig, target)
     return target
 
 
 def plot_wape(metrics: pd.DataFrame, horizon: int = 7, path: Path | None = None) -> Path:
     target = path or cfg.FIGURES / f"forecast_wape_h{horizon}.png"
-    target.parent.mkdir(parents=True, exist_ok=True)
     window = metrics.loc[
         (metrics["level"] == "total") & (metrics["horizon"] == horizon)
     ].sort_values("wape", ascending=True)
-    fig, ax = plt.subplots(figsize=(8, 4.5))
+    fig, ax = plt.subplots(figsize=(8.5, 4.5), layout="constrained")
+    if window.empty:
+        ax.set_axis_off()
+        ax.text(0.5, 0.5, f"Нет метрик для горизонта {horizon} дн.", ha="center", va="center")
+        plotting.save_figure(fig, target)
+        return target
     positions = np.arange(len(window))
-    ax.barh(positions, window["wape"], color="#4c72b0")
+    best = float(window["wape"].min())
+    colors = [plotting.GREEN if value == best else plotting.BLUE for value in window["wape"]]
+    ax.barh(positions, window["wape"], color=colors)
     ax.set_yticks(positions, labels=window["model"].tolist())
+    # barh puts the first row at the bottom; invert so the best model sits on top.
+    ax.invert_yaxis()
     for position, value in zip(positions, window["wape"], strict=True):
         ax.text(value, position, f" {value:.2%}", va="center", fontsize=9)
-    ax.set_xlabel("WAPE (lower is better)")
-    ax.set_title(f"Forecast accuracy by model, horizon {horizon} days")
-    ax.grid(axis="x", alpha=0.3)
-    fig.tight_layout()
-    fig.savefig(target, dpi=150)
-    plt.close(fig)
+    ax.set_xlim(0, float(window["wape"].max()) * 1.18)
+    plotting.percent(ax, "x")
+    ax.set_xlabel("WAPE, ниже — лучше")
+    ax.set_title(f"Точность прогноза по моделям, горизонт {horizon} дн.")
+    ax.grid(axis="x")
+    ax.legend(
+        handles=[
+            Patch(facecolor=plotting.GREEN, label="лучшая модель"),
+            Patch(facecolor=plotting.BLUE, label="остальные"),
+        ],
+        loc="upper right",
+    )
+    plotting.save_figure(fig, target)
     return target
 
 

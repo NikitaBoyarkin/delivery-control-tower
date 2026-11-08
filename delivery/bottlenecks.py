@@ -29,6 +29,9 @@ import pandas as pd  # noqa: E402
 from scipy import stats  # noqa: E402
 
 from delivery import config as cfg  # noqa: E402
+from delivery import plotting  # noqa: E402
+
+plotting.apply_style()
 
 MIN_CITY_DAYS = 60
 DECILES = 10
@@ -141,7 +144,9 @@ def channel_category_table(mart: pd.DataFrame) -> pd.DataFrame:
     return table[CHANNEL_CATEGORY_COLUMNS]
 
 
-def load_curve(city_daily: pd.DataFrame, deciles: int = DECILES) -> tuple[pd.DataFrame, dict[str, Any]]:
+def load_curve(
+    city_daily: pd.DataFrame, deciles: int = DECILES
+) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Split city-day volume into deciles; return per-decile time stats and Spearman.
 
     All finite ``(qty, avg_time)`` observations land in exactly one decile, so
@@ -239,7 +244,9 @@ def city_ranking(city_daily: pd.DataFrame, min_days: int = MIN_CITY_DAYS) -> pd.
         + _zscore(frame["weighted_avg_time"])
         + _zscore(frame["cost_per_item"])
     ) / 3.0
-    frame = frame.sort_values("degradation_index", ascending=False, kind="stable").reset_index(drop=True)
+    frame = frame.sort_values("degradation_index", ascending=False, kind="stable").reset_index(
+        drop=True
+    )
     frame.insert(0, "rank", np.arange(1, len(frame) + 1))
     total = len(frame)
     frame["segment"] = np.where(
@@ -250,7 +257,9 @@ def city_ranking(city_daily: pd.DataFrame, min_days: int = MIN_CITY_DAYS) -> pd.
     return frame[CITY_COLUMNS]
 
 
-def select_extremes(ranking: pd.DataFrame, top: int = 10, bottom: int = 5) -> tuple[pd.DataFrame, pd.DataFrame]:
+def select_extremes(
+    ranking: pd.DataFrame, top: int = 10, bottom: int = 5
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Return the worst ``top`` and the best ``bottom`` rows of a ranked city frame."""
     if ranking.empty:
         return ranking.copy(), ranking.copy()
@@ -342,63 +351,136 @@ def analyze(db_path: Path = cfg.DUCKDB_PATH) -> dict[str, Any]:
     }
 
 
-def _plot_load_curve(curve: pd.DataFrame, path: Path) -> None:
-    fig, ax = plt.subplots(figsize=(9, 5))
-    ax.bar(curve["decile"], curve["mean_avg_time"], color="#4C72B0", alpha=0.85)
+def _plot_load_curve(curve: pd.DataFrame, correlation: dict[str, Any], path: Path) -> None:
+    """Delivery time by decile as a line on a zoomed axis, volume as light bars behind it.
+
+    The message of this figure is a flat line over a 0.64-minute spread, so the time
+    axis does not start at zero and both the axis label and the in-plot note say so.
+    Bars drawn from zero would hide the entire variation the figure exists to show.
+    """
+    fig, ax = plt.subplots(figsize=(10, 5.2), layout="constrained")
+
+    if curve.empty:
+        ax.set_axis_off()
+        ax.text(0.5, 0.5, "Нет данных для кривой нагрузки", ha="center", va="center")
+        plotting.save_figure(fig, path)
+        return
+
+    volume_ax = ax.twinx()
+    bars = volume_ax.bar(
+        curve["decile"],
+        curve["mean_qty"],
+        color=plotting.BLUE,
+        alpha=0.16,
+        width=0.7,
+        label="Средний объём в дециле (правая ось, лог. шкала)",
+    )
+    volume_ax.set_yscale("log")
+    volume_ax.set_ylabel("Средний qty в дециле (лог. шкала)")
+    volume_ax.set_ylim(curve["mean_qty"].min() * 0.5, curve["mean_qty"].max() * 2.5)
+    volume_ax.grid(False)
+
+    line = ax.plot(
+        curve["decile"],
+        curve["mean_avg_time"],
+        color=plotting.RED,
+        marker="o",
+        markersize=6,
+        linewidth=2.0,
+        label="Среднее время доставки (левая ось, шкала не от нуля)",
+    )[0]
+
+    low, high = plotting.padded_range(curve["mean_avg_time"].tolist())
+    ax.set_ylim(low, high)
     ax.set_xlabel("Дециль нагрузки (дневной qty города)")
-    ax.set_ylabel("Среднее время доставки, мин")
-    ax.set_title("Кривая нагрузки: время доставки по децилям объёма позиций")
+    ax.set_ylabel("Среднее время доставки, мин (шкала не от нуля)")
     ax.set_xticks(curve["decile"])
+    ax.grid(axis="y")
+
     for row in curve.itertuples():
         ax.annotate(
             f"{row.mean_avg_time:.2f}",
             (row.decile, row.mean_avg_time),
             textcoords="offset points",
-            xytext=(0, 3),
+            xytext=(0, 9),
             ha="center",
             fontsize=8,
+            color=plotting.INK,
         )
-    twin = ax.twinx()
-    twin.plot(curve["decile"], curve["mean_qty"], color="#C44E52", marker="o")
-    twin.set_yscale("log")
-    twin.set_ylabel("Средний qty в дециле (лог. шкала)")
-    fig.tight_layout()
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
+
+    rho = float(correlation.get("rho", float("nan")))
+    spread = float(curve["mean_avg_time"].max() - curve["mean_avg_time"].min())
+    ax.set_title("Кривая нагрузки: время доставки по децилям объёма позиций")
+    ax.text(
+        0.01,
+        0.97,
+        f"ρ = {rho:+.3f}; разброс по децилям {spread:.2f} мин",
+        transform=ax.transAxes,
+        fontsize=9,
+        va="top",
+        color=plotting.GREY,
+    )
+    ax.legend(
+        handles=[line, bars],
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.13),
+        ncols=2,
+        frameon=False,
+    )
+    plotting.save_figure(fig, path)
 
 
 def _plot_city_slopes(cities: pd.DataFrame, path: Path) -> None:
+    """Worst-10 and best-5 cities; the bar is the OLS slope, rows follow the index order."""
     worst, best = select_extremes(cities)
     subset = pd.concat([worst, best]).drop_duplicates(subset=["city_name"])
-    fig, ax = plt.subplots(figsize=(9, 6))
-    colors = ["#C44E52" if segment == "worst10" else "#55A868" for segment in subset["segment"]]
+    colors = [
+        plotting.RED if segment == "worst10" else plotting.GREEN for segment in subset["segment"]
+    ]
+    fig, ax = plt.subplots(figsize=(9, 6), layout="constrained")
     ax.barh(subset["city_name"], subset["slope_sec_per_1000"], color=colors, alpha=0.9)
-    ax.axvline(0, color="black", linewidth=0.8)
+    ax.axvline(0, color=plotting.INK, linewidth=0.8)
     ax.set_xlabel("Наклон avg_time ~ qty, сек на 1000 позиций")
-    ax.set_title("Ранжирование городов: верх-10 (красный) и низ-5 (зелёный) по деградации")
+    ax.set_title(
+        "Деградация по городам: верх-10 (красный) и низ-5 (зелёный)\n"
+        "строки упорядочены по индексу деградации, длина столбца — наклон"
+    )
     ax.invert_yaxis()
-    fig.tight_layout()
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
+    ax.grid(axis="x")
+    plotting.save_figure(fig, path)
 
 
 def _plot_channel_category(channels: pd.DataFrame, path: Path) -> None:
     pairs = channels.loc[channels["channel"] != "all"]
+    fig, ax = plt.subplots(figsize=(9, 4.8), layout="constrained")
+    if pairs.empty:
+        ax.set_axis_off()
+        ax.text(0.5, 0.5, "Нет данных по каналам и категориям", ha="center", va="center")
+        plotting.save_figure(fig, path)
+        return
     pivot = pairs.pivot(index="channel", columns="category", values="weighted_avg_time")
-    fig, ax = plt.subplots(figsize=(8, 4.5))
-    image = ax.imshow(pivot.to_numpy(), aspect="auto", cmap="YlOrRd")
+    values = pivot.to_numpy()
+    image = ax.imshow(values, aspect="auto", cmap="YlOrRd")
     ax.set_xticks(range(len(pivot.columns)), pivot.columns)
     ax.set_yticks(range(len(pivot.index)), pivot.index)
-    ax.set_title("Время доставки, мин: канал x категория")
+    ax.set_title("Время доставки, мин: канал × категория")
     for i in range(len(pivot.index)):
         for j in range(len(pivot.columns)):
-            value = pivot.iloc[i, j]
+            value = values[i, j]
             if np.isfinite(value):
-                ax.text(j, i, f"{value:.1f}", ha="center", va="center", fontsize=9)
-    fig.colorbar(image, ax=ax, label="мин")
-    fig.tight_layout()
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
+                ax.text(
+                    j,
+                    i,
+                    f"{value:.1f}",
+                    ha="center",
+                    va="center",
+                    fontsize=10,
+                    fontweight="bold",
+                    color=plotting.readable_text_color(image, value),
+                )
+    colorbar = fig.colorbar(image, ax=ax)
+    colorbar.set_label("мин")
+    plotting.save_figure(fig, path)
 
 
 def write_reports(
@@ -421,7 +503,7 @@ def write_reports(
     result["channels"].to_csv(paths["channels_csv"], index=False)
     result["cities"].to_csv(paths["cities_csv"], index=False)
     result["load_curve"].to_csv(paths["load_curve_csv"], index=False)
-    _plot_load_curve(result["load_curve"], paths["load_curve_png"])
+    _plot_load_curve(result["load_curve"], result["spearman"], paths["load_curve_png"])
     if not result["cities"].empty:
         _plot_city_slopes(result["cities"], paths["city_slopes_png"])
     _plot_channel_category(result["channels"], paths["channel_category_png"])
