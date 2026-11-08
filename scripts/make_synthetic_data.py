@@ -166,10 +166,23 @@ def apply_paths(base: str | Path) -> dict[str, Path]:
     }
 
 
+def bind_expected_rows(counts: dict[str, int]) -> None:
+    """Point quality's row-count contract at the fixture that was just written.
+
+    The synthetic dataset is schema-identical but deliberately smaller than the
+    real one, so ``config.EXPECTED_*_ROWS`` (the real dataset's counts) can never
+    match it. Binding the expectation to the rows just written keeps the check
+    meaningful: it still fails when ETL drops or duplicates raw rows.
+    """
+    cfg.EXPECTED_AGG_ROWS = counts["agg"]
+    cfg.EXPECTED_ORDER_ROWS = counts["orders"]
+
+
 def build(base: str | Path, overwrite: bool = False) -> dict[str, int]:
     """Materialise the fixture and run ``etl -> quality -> marts`` into ``base``."""
     paths = apply_paths(base)
     counts = write_raw(paths["raw"], overwrite=overwrite)
+    bind_expected_rows(counts)
     etl.write_staging()
     sales, orders = quality.load_staging()
     report = quality.write_report(quality.run_checks(sales, orders))

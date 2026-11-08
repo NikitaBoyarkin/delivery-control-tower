@@ -31,7 +31,7 @@ import pytest
 
 from delivery import bottlenecks, dashboard, etl, forecast, hypothesis, marts, quality
 from delivery import config as cfg
-from scripts.make_synthetic_data import apply_paths, write_raw
+from scripts.make_synthetic_data import apply_paths, bind_expected_rows, write_raw
 
 _MODULES = (marts, forecast, hypothesis, bottlenecks, dashboard)
 _PATCHED = False
@@ -91,8 +91,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
     # The synthetic dataset is authoritative for the synthetic profile: the row
     # counts that quality/etl assert must describe *this* data.
-    cfg.EXPECTED_AGG_ROWS = counts["agg"]
-    cfg.EXPECTED_ORDER_ROWS = counts["orders"]
+    bind_expected_rows(counts)
 
     _retarget_defaults(
         {
